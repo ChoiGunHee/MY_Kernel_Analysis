@@ -384,11 +384,11 @@ static int ext4_file_mmap(struct file *file, struct vm_area_struct *vma)
 static int ext4_sample_last_mounted(struct super_block *sb,
 				    struct vfsmount *mnt)
 {
-	struct ext4_sb_info *sbi = EXT4_SB(sb);
-	struct path path;
-	char buf[64], *cp;
-	handle_t *handle;
-	int err;
+	struct ext4_sb_info *sbi = EXT4_SB(sb);		//ext4 super block에서 파일시스템 정보를 가져옴
+	struct path path;				//vfsmount의 포인터 위치에서 가져온다. 파일시스템 정보 포인터 경로
+	char buf[64], *cp;				//버퍼 및 복사 포인터
+	handle_t *handle;				//jbd2_journal_handle 구조체, 저널링의 위한 구조체
+	int err;					//에러 변수
 
 	if (likely(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED))
 		return 0;
@@ -429,13 +429,35 @@ out:
 	return err;
 }
 
+
+//ext4 File Open function
 static int ext4_file_open(struct inode * inode, struct file * filp)
 {
+	//반환값 저장변수 선언
 	int ret;
+	
+	/*
+		EXT4의 슈퍼블록이 오류가 있는 없는지 검사
+		unlikely/likely 함수 : 거짓, 참 중에서 상대적으로 많이 발생하는 것을 지정하여
+		컴파일러단에서 분기예측을 할 수 있게 도와줌.
+		여기서는 일반적으로 오류가 나지 않으므로, 0을 주로 반환
+		
+		EXT4_SB() 함수 : return sb->s_fs_info로 Filesystem private info를 반환한다.
+		
+		ext4_forced_shutdown() 함수 : ext4 sbi의 flags를 비교하여 오류가 있는지 점검한다.
+		에러면 -EIO 바로 반환
 
+		결국은 에러 검사
+		
+		** 추가 필요 사항 **
+		- test_bit함수를 사용하는 아직 어떻게 동작하는지 파악안됨.
+	*/
 	if (unlikely(ext4_forced_shutdown(EXT4_SB(inode->i_sb))))
 		return -EIO;
-
+	
+	/*
+		
+	*/	
 	ret = ext4_sample_last_mounted(inode->i_sb, filp->f_path.mnt);
 	if (ret)
 		return ret;

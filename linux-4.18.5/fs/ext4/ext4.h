@@ -1817,6 +1817,7 @@ static inline bool ext4_has_incompat_features(struct super_block *sb)
 #define EXT4_FLAGS_RESIZING	0
 #define EXT4_FLAGS_SHUTDOWN	1
 
+// ext4 강제 종료 확인 여부 함수
 static inline int ext4_forced_shutdown(struct ext4_sb_info *sbi)
 {
 	return test_bit(EXT4_FLAGS_SHUTDOWN, &sbi->s_ext4_flags);
