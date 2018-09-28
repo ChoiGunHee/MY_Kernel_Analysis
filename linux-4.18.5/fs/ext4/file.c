@@ -389,13 +389,25 @@ static int ext4_sample_last_mounted(struct super_block *sb,
 	char buf[64], *cp;				//버퍼 및 복사 포인터
 	handle_t *handle;				//jbd2_journal_handle 구조체, 저널링의 위한 구조체
 	int err;					//에러 변수
-
+	
+	// mount option 확인
+	// sbi는 ext4의 슈퍼블록으로 마운트 정보를 가지고 있다.
+	// EXT4_MF_MNTDIR_SAMPLED는 현재 마운트가 되어있는가를 확인하는 플래그이다.
+	// 이 플래그가 확인되면 굳이 한번 더 마운트할 필요가 없기때문에 있는 정보를 활용한다.
+	// 따라서, 있다면 아무 문제가 없는 것이므로 0 바로 반환
+	// * 왜 샘플이라고 표현했는가는 궁금함.
 	if (likely(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED))
 		return 0;
-
+	
+	// sb_rdonly(sb) : 슈퍼블록이 읽기전용인지 확인한다.
+	// sb_start_intwrite_trylock(sb) : 슈퍼 블록에 대한 쓰기 락 획득
+	// 위 두 함수를 이용하여 읽기전용이나 쓰기 lock을 잡았거나 둘 중 하나 일때, 그래도 0을 반환
+	// 즉, 쓰기권한을 가지고 저널을 기록하거나, 기록할 필요없는 읽기전용인지를 확인한다.
+	// ************** lock부분에 대한 추가 설명 필요 
 	if (sb_rdonly(sb) || !sb_start_intwrite_trylock(sb))
 		return 0;
-
+	
+	//마운트처리를 위해 플래그 설정을 지정해준다.
 	sbi->s_mount_flags |= EXT4_MF_MNTDIR_SAMPLED;
 	/*
 	 * Sample where the filesystem has been mounted and
@@ -403,30 +415,40 @@ static int ext4_sample_last_mounted(struct super_block *sb,
 	 * when trying to sort through large numbers of block
 	 * devices or filesystem images.
 	 */
-	memset(buf, 0, sizeof(buf));
-	path.mnt = mnt;
-	path.dentry = mnt->mnt_root;
-	cp = d_path(&path, buf, sizeof(buf));
-	err = 0;
+	
+	
+	memset(buf, 0, sizeof(buf));				//버퍼 사이즈 설정
+	path.mnt = mnt;						//파일시스템 정보 포인터를 연결
+	path.dentry = mnt->mnt_root;				//파일 시스템의 루트 디렉토리 연결
+	cp = d_path(&path, buf, sizeof(buf));			//경로 임시 복사
+	err = 0;						//0이면 정상
+	
+	//경로 에러 검사
 	if (IS_ERR(cp))
 		goto out;
-
+	
+	//open journaling 시작
+	//ext4_journal_start_sb() : micro 함수, __ext4_journal_start_sb() 호출
+	//journaling 시작
+	//**********journaling의 자세한 분석은 추후 예정
 	handle = ext4_journal_start_sb(sb, EXT4_HT_MISC, 1);
-	err = PTR_ERR(handle);
+	err = PTR_ERR(handle);					//journaling 에러 확인
 	if (IS_ERR(handle))
 		goto out;
-	BUFFER_TRACE(sbi->s_sbh, "get_write_access");
-	err = ext4_journal_get_write_access(handle, sbi->s_sbh);
-	if (err)
+	BUFFER_TRACE(sbi->s_sbh, "get_write_access");		//journaling 트레이싱
+	
+	//ext4_journal_get_write_access() : journal 기록을 시작한다.
+	err = ext4_journal_get_write_access(handle, sbi->s_sbh); 
+	if (err)						//에러처리
 		goto out_journal;
-	strlcpy(sbi->s_es->s_last_mounted, cp,
+	strlcpy(sbi->s_es->s_last_mounted, cp,			//기록할 내용
 		sizeof(sbi->s_es->s_last_mounted));
-	ext4_handle_dirty_super(handle, sb);
+	ext4_handle_dirty_super(handle, sb);			//journal 기록
 out_journal:
-	ext4_journal_stop(handle);
+	ext4_journal_stop(handle);				//journal 기록 중지
 out:
-	sb_end_intwrite(sb);
-	return err;
+	sb_end_intwrite(sb);					//슈퍼블록에 대한 쓰기 락 해제
+	return err;						//결과 반환
 }
 
 
@@ -456,12 +478,20 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 		return -EIO;
 	
 	/*
-		
+		기존의 마운트를 했는지를 검사하는 함수이다.
+		만약, 읽기전용이라면 저널을 할 필요가 없기때문에 그대로 반환
+		아니라면, 마운트한 저널 내용을 기록하고 슈퍼블록 정보를 갱신한다.
+		문제가 있다면 true가 반환되어 open이 중지된다.
 	*/	
 	ret = ext4_sample_last_mounted(inode->i_sb, filp->f_path.mnt);
 	if (ret)
 		return ret;
-
+	
+	/*
+		암호화된 파일시스템일 경우 key를 먼저 획득해야한다.
+		확인을 한 뒤 열지말지 결정한다.
+		0이 반환되면 성공	
+	*/
 	ret = fscrypt_file_open(inode, filp);
 	if (ret)
 		return ret;
@@ -475,8 +505,10 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 		if (ret < 0)
 			return ret;
 	}
-
+	
+	//i/o가 차단될 경우 -EAGIN이 반환될 수 있다. --> FMODE_NOWAIT
 	filp->f_mode |= FMODE_NOWAIT;
+	//dquot_file_open() : generic_file_open()을 호출한다.
 	return dquot_file_open(inode, filp);
 }
 
