@@ -1136,6 +1136,7 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 	
 	//디바이스 정보 가져오기
 	//blkdev_get_by_path() 함수는 fs/block_dev.c에 정의
+	//path는 dev_name으로 되어있는데 이걸로 각 장치들을 구분한다.
 	bdev = blkdev_get_by_path(dev_name, mode, fs_type);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
@@ -1145,18 +1146,25 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 	 * will protect the lockfs code from trying to start a snapshot
 	 * while we are mounting
 	 */
+	//mount 진행시 락을 잡아 안전하게 진행한다.
+	//아래는 오류처리
 	mutex_lock(&bdev->bd_fsfreeze_mutex);
 	if (bdev->bd_fsfreeze_count > 0) {
 		mutex_unlock(&bdev->bd_fsfreeze_mutex);
 		error = -EBUSY;
 		goto error_bdev;
 	}
+	//슈퍼블록은 연결해주는 함수
+	//파일시스템의 슈퍼블록, 비교를 위한 테스트 함수, 슈퍼블록 셋함수, 마운트플래그, 추가 플래그
 	s = sget(fs_type, test_bdev_super, set_bdev_super, flags | SB_NOSEC,
 		 bdev);
+	//슈퍼블록 연결을했으니 마우늩 해제
+	//아래는 에러처리
 	mutex_unlock(&bdev->bd_fsfreeze_mutex);
 	if (IS_ERR(s))
 		goto error_s;
 
+	//TODO:ChoiGunHee
 	if (s->s_root) {
 		if ((flags ^ s->s_flags) & SB_RDONLY) {
 			deactivate_locked_super(s);

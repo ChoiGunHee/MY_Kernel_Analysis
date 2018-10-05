@@ -1685,7 +1685,8 @@ struct block_device *blkdev_get_by_path(const char *path, fmode_t mode,
 {
 	struct block_device *bdev;
 	int err;
-
+	
+	//장치 검색, path는 보통 장치이름으로 이걸로 검색한다.
 	bdev = lookup_bdev(path);
 	if (IS_ERR(bdev))
 		return bdev;
