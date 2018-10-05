@@ -5833,6 +5833,8 @@ static int ext4_get_next_id(struct super_block *sb, struct kqid *qid)
 }
 #endif
 
+//ext4_mount 시작 함수
+//mount_bdev() 함수는 fs/super.c에 정의되어있다.
 static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 		       const char *dev_name, void *data)
 {
@@ -5895,6 +5897,7 @@ static inline int ext3_feature_set_ok(struct super_block *sb)
 	return 1;
 }
 
+//mount 등륵 구조체
 static struct file_system_type ext4_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "ext4",

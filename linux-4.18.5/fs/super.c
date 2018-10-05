@@ -1117,18 +1117,25 @@ static int test_bdev_super(struct super_block *s, void *data)
 	return (void *)s->s_bdev == data;
 }
 
+//mount 함수
+//해당 함수는 공통적으로 쓰임으로 보임
+//각 디바이스 장치 정보와 함께 슈퍼블록정보를 매개변수로 받아 초기화함.
+//각 파일시스템의 슈퍼블록 초기화 함수인 fill_super함수를 매개변수로 받는다.
 struct dentry *mount_bdev(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data,
 	int (*fill_super)(struct super_block *, void *, int))
 {
-	struct block_device *bdev;
-	struct super_block *s;
-	fmode_t mode = FMODE_READ | FMODE_EXCL;
+	struct block_device *bdev;				//device 장비 구조체
+	struct super_block *s;					//super block 변수
+	fmode_t mode = FMODE_READ | FMODE_EXCL;		//파일모드를 설정한다. 읽기위한 열기 / 오직 디바이스 장치에서 열기위한 옵션 2가지로 초기화
 	int error = 0;
-
+	
+	//받은 플래그 옵션에서 슈퍼블랙 읽기모드가 아니라면, 파일모드에 쓰기도 추가한다.
 	if (!(flags & SB_RDONLY))
 		mode |= FMODE_WRITE;
-
+	
+	//디바이스 정보 가져오기
+	//blkdev_get_by_path() 함수는 fs/block_dev.c에 정의
 	bdev = blkdev_get_by_path(dev_name, mode, fs_type);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
